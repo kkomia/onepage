@@ -157,7 +157,7 @@ fn success_message(code: &str) -> Option<&'static str> {
         "link_created" => "链接已添加。",
         "link_updated" => "链接已更新。",
         "link_deleted" => "链接已删除。",
-        "link_moved" => "链接顺序已更新。",
+        "link_moved" => "顺序已调整。成员视图先按各自使用次数排列，使用次数相同的链接按这个顺序。",
         "icon_refreshed" => "图标已刷新。",
         "category_created" => "分类已添加。",
         "category_updated" => "分类名称已更新。",
@@ -179,7 +179,7 @@ fn success_message(code: &str) -> Option<&'static str> {
 
 fn error_message(code: &str) -> Option<&'static str> {
     Some(match code {
-        "last_admin" => "空间至少需要保留一位管理员。",
+        "last_admin" => "空间至少需要保留一位可用的管理员。",
         "member_missing" => "这个账号不存在，或已经停用。",
         "member_exists" => "这个账号已经是空间成员。",
         "category_duplicate" => "这个分类已经存在。",

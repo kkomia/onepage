@@ -809,7 +809,7 @@
       const endpoint = wasEditing
         ? `${boot.apiBase}/links/${state.editingId}`
         : `${boot.apiBase}/links`;
-      const method = wasEditing ? "PATCH" : "POST";
+      const method = wasEditing ? "PUT" : "POST";
       const data = await api(endpoint, {
         method,
         body: JSON.stringify({
@@ -1137,11 +1137,30 @@
     if (typeof callback === "function") callback();
   });
 
-  $$("dialog").forEach((dialog) => {
-    dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) dialog.close();
+  // Clicking the blank area around a dialog, or pressing Esc, used to discard a
+  // half-typed form. Only dismiss without asking when nothing was entered; the
+  // explicit 取消/关闭 buttons always work.
+  function dialogHasContent(dialog) {
+    return $$("input, textarea, select", dialog).some((field) => {
+      if (field.disabled || field.type === "hidden") return false;
+      if (field.type === "checkbox" || field.type === "radio") return field.checked;
+      if (field.type === "file") return field.files.length > 0;
+      if (field.tagName === "SELECT") return field.selectedIndex > 0;
+      return String(field.value || "").trim() !== "";
     });
-  });
+  }
+
+  function bindDialogGuard(dialog) {
+    dialog.addEventListener("click", (event) => {
+      if (event.target !== dialog) return;
+      if (!dialogHasContent(dialog)) dialog.close();
+    });
+    dialog.addEventListener("cancel", (event) => {
+      if (dialogHasContent(dialog)) event.preventDefault();
+    });
+  }
+
+  $$("dialog").forEach(bindDialogGuard);
 
   window.addEventListener("scroll", updateScrollspy, { passive: true });
 

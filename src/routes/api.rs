@@ -1,7 +1,8 @@
 use std::time::Duration;
 
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use axum_extra::extract::cookie::CookieJar;
@@ -18,6 +19,9 @@ use crate::util::{
 };
 use crate::web;
 
+/// Replacing a link: every field is read on each request, so a field that is
+/// simply omitted is treated as empty rather than preserved. The route is PUT
+/// to make that contract explicit.
 #[derive(Debug, Deserialize)]
 pub struct LinkPayload {
     title: String,
@@ -35,12 +39,20 @@ pub struct CategoryPayload {
     name: String,
 }
 
+/// Rejected JSON has to come back in the same shape as every other API error,
+/// otherwise the client cannot show the field-level message.
+fn payload_or_error<T>(result: Result<Json<T>, JsonRejection>) -> ApiResult<T> {
+    result.map(|Json(value)| value).map_err(|error| {
+        ApiError::new(StatusCode::BAD_REQUEST, error.body_text())
+    })
+}
+
 pub async fn create_link(
     State(state): State<AppState>,
     jar: CookieJar,
     Path(space_slug): Path<String>,
     headers: HeaderMap,
-    Json(payload): Json<LinkPayload>,
+    payload: Result<Json<LinkPayload>, JsonRejection>,
 ) -> Response {
     match create_link_inner(state, jar, space_slug, headers, payload).await {
         Ok(response) => response,
@@ -53,8 +65,9 @@ async fn create_link_inner(
     jar: CookieJar,
     space_slug: String,
     headers: HeaderMap,
-    payload: LinkPayload,
+    payload: Result<Json<LinkPayload>, JsonRejection>,
 ) -> ApiResult<Response> {
+    let payload = payload_or_error(payload)?;
     let session = web::require_api_session(&state, &jar).await?;
     web::verify_api_csrf(&session, &headers)?;
     let access = access::require_api_member(&state.db, &session.user, &space_slug).await?;
@@ -90,6 +103,8 @@ async fn create_link_inner(
     .await
     .map_err(ApiError::internal)?;
 
+    state.refresh_icon_in_background(link.id);
+
     let category = category_id.map(|id| {
         json!({
             "id": id,
@@ -109,7 +124,7 @@ pub async fn update_link(
     jar: CookieJar,
     Path((space_slug, link_id)): Path<(String, i64)>,
     headers: HeaderMap,
-    Json(payload): Json<LinkPayload>,
+    payload: Result<Json<LinkPayload>, JsonRejection>,
 ) -> Response {
     match update_link_inner(state, jar, space_slug, link_id, headers, payload).await {
         Ok(response) => response,
@@ -123,8 +138,9 @@ async fn update_link_inner(
     space_slug: String,
     link_id: i64,
     headers: HeaderMap,
-    payload: LinkPayload,
+    payload: Result<Json<LinkPayload>, JsonRejection>,
 ) -> ApiResult<Response> {
+    let payload = payload_or_error(payload)?;
     let session = web::require_api_session(&state, &jar).await?;
     web::verify_api_csrf(&session, &headers)?;
     let access = access::require_api_member(&state.db, &session.user, &space_slug).await?;
@@ -153,6 +169,7 @@ async fn update_link_inner(
     )
     .await?;
 
+    let url_changed = existing.url != url;
     let updated = links::update_link(
         &state.db,
         &existing,
@@ -165,6 +182,10 @@ async fn update_link_inner(
     )
     .await
     .map_err(ApiError::internal)?;
+
+    if url_changed || updated.icon_hash.is_none() {
+        state.refresh_icon_in_background(updated.id);
+    }
 
     let category = category_id.map(|id| {
         json!({
@@ -247,7 +268,7 @@ async fn refresh_icon_inner(
     }
 
     let fetch = favicon::refresh_for_link(&state.db, &state.http, &state.config, link_id);
-    let icon_hash = match tokio::time::timeout(Duration::from_secs(9), fetch).await {
+    let icon_hash = match tokio::time::timeout(Duration::from_secs(10), fetch).await {
         Ok(Ok(hash)) => hash,
         Ok(Err(error)) => {
             tracing::warn!(link_id, error = %error, "manual icon refresh failed");
@@ -269,7 +290,7 @@ pub async fn create_category(
     jar: CookieJar,
     Path(space_slug): Path<String>,
     headers: HeaderMap,
-    Json(payload): Json<CategoryPayload>,
+    payload: Result<Json<CategoryPayload>, JsonRejection>,
 ) -> Response {
     match create_category_inner(state, jar, space_slug, headers, payload).await {
         Ok(response) => response,
@@ -282,8 +303,9 @@ async fn create_category_inner(
     jar: CookieJar,
     space_slug: String,
     headers: HeaderMap,
-    payload: CategoryPayload,
+    payload: Result<Json<CategoryPayload>, JsonRejection>,
 ) -> ApiResult<Response> {
+    let payload = payload_or_error(payload)?;
     let session = web::require_api_session(&state, &jar).await?;
     web::verify_api_csrf(&session, &headers)?;
     let access = access::require_api_member(&state.db, &session.user, &space_slug).await?;
@@ -324,7 +346,7 @@ pub async fn update_category(
     jar: CookieJar,
     Path((space_slug, category_id)): Path<(String, i64)>,
     headers: HeaderMap,
-    Json(payload): Json<CategoryPayload>,
+    payload: Result<Json<CategoryPayload>, JsonRejection>,
 ) -> Response {
     match update_category_inner(state, jar, space_slug, category_id, headers, payload).await {
         Ok(response) => response,
@@ -338,8 +360,9 @@ async fn update_category_inner(
     space_slug: String,
     category_id: i64,
     headers: HeaderMap,
-    payload: CategoryPayload,
+    payload: Result<Json<CategoryPayload>, JsonRejection>,
 ) -> ApiResult<Response> {
+    let payload = payload_or_error(payload)?;
     let session = web::require_api_session(&state, &jar).await?;
     web::verify_api_csrf(&session, &headers)?;
     let access = access::require_api_member(&state.db, &session.user, &space_slug).await?;

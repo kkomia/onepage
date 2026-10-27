@@ -50,9 +50,26 @@
     focusDialog(dialog);
   });
 
+  // Blank-area clicks and Esc used to discard a half-filled form. Keep them
+  // working for empty dialogs, but refuse when something was typed; the
+  // explicit 取消/关闭 buttons still close immediately.
+  function dialogHasContent(dialog) {
+    return Array.from(dialog.querySelectorAll("input, textarea, select")).some((field) => {
+      if (field.disabled || field.type === "hidden") return false;
+      if (field.type === "checkbox" || field.type === "radio") return field.checked;
+      if (field.type === "file") return field.files.length > 0;
+      if (field.tagName === "SELECT") return field.selectedIndex > 0;
+      return String(field.value || "").trim() !== "";
+    });
+  }
+
   document.querySelectorAll("dialog").forEach((dialog) => {
     dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) dialog.close();
+      if (event.target !== dialog) return;
+      if (!dialogHasContent(dialog)) dialog.close();
+    });
+    dialog.addEventListener("cancel", (event) => {
+      if (dialogHasContent(dialog)) event.preventDefault();
     });
     dialog.addEventListener("close", () => {
       dialog.removeAttribute("data-open");

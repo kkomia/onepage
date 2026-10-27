@@ -5,7 +5,7 @@ use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::Form;
 use axum_extra::extract::cookie::CookieJar;
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -158,9 +158,10 @@ async fn login_submit_inner(
     let next = safe_next(Some(form.next.as_str()));
     let username_input = form.username.trim().to_string();
     let ip = peer.ip().to_string();
-    let throttle_key = format!("{}|{}", username_input.to_ascii_lowercase(), ip);
+    let address_key = format!("ip:{ip}");
+    let account_key = format!("account:{}", username_input.to_ascii_lowercase());
 
-    if let Some(seconds) = state.throttle.blocked_for(&throttle_key) {
+    if let Some(seconds) = state.throttle.blocked_for(&account_key, &address_key) {
         let error = format!("尝试次数过多，请在 {seconds} 秒后再试。");
         return render_login(
             &state,
@@ -174,7 +175,7 @@ async fn login_submit_inner(
 
     let found = auth::user_with_password(&state.db, &username_input).await?;
     let Some((user, password_hash)) = found else {
-        state.throttle.record_failure(&throttle_key);
+        state.throttle.record_failure(&account_key, &address_key);
         return render_login(
             &state,
             &site_name,
@@ -186,7 +187,7 @@ async fn login_submit_inner(
     };
 
     if !auth::verify_password(&password_hash, &form.password).await {
-        state.throttle.record_failure(&throttle_key);
+        state.throttle.record_failure(&account_key, &address_key);
         return render_login(
             &state,
             &site_name,
@@ -198,6 +199,8 @@ async fn login_submit_inner(
     }
 
     if !user.is_active {
+        // Still counts, so the status message cannot be probed for free.
+        state.throttle.record_failure(&account_key, &address_key);
         return render_login(
             &state,
             &site_name,
@@ -208,7 +211,7 @@ async fn login_submit_inner(
         );
     }
 
-    state.throttle.clear(&throttle_key);
+    state.throttle.clear(&account_key, &address_key);
     auth::mark_login(&state.db, user.id).await?;
 
     let user_agent = headers
@@ -355,7 +358,7 @@ async fn setup_submit_inner(
                     params![username],
                     |row| row.get(0),
                 )
-                .ok();
+                .optional()?;
             if username_taken.is_some() {
                 anyhow::bail!("这个登录账号已经被使用。");
             }
@@ -365,7 +368,7 @@ async fn setup_submit_inner(
                     params![space_slug],
                     |row| row.get(0),
                 )
-                .ok();
+                .optional()?;
             if slug_taken.is_some() {
                 anyhow::bail!("这个空间标识已经被使用。");
             }

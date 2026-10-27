@@ -443,7 +443,7 @@ pub async fn searchable_links(
              LEFT JOIN link_clicks lc ON lc.link_id = l.id AND lc.user_id = ?2
              WHERE l.space_id = ?1 AND (l.owner_id IS NULL OR l.owner_id IS ?2)
              ORDER BY l.owner_id IS NOT NULL, l.category_id,
-                      COALESCE(lc.click_count, 0), l.sort_order, l.id",
+                      COALESCE(lc.click_count, 0) DESC, l.sort_order, l.id",
         )?;
         let rows = stmt
             .query_map(params![space_id, user_id], |row| {

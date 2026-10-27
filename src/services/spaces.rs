@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use anyhow::{anyhow, bail, Result};
 use rusqlite::{params, OptionalExtension};
 
@@ -223,6 +225,32 @@ pub async fn add_member(
     .await
 }
 
+/// A disabled admin still counts in `role = 'admin'`, so the guard has to look
+/// at live accounts only — otherwise a space can end up with no one able to
+/// manage it while the count still says otherwise.
+fn require_another_active_admin(
+    conn: &rusqlite::Connection,
+    space_id: i64,
+    user_id: i64,
+) -> Result<()> {
+    let active_admins: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM memberships m
+         JOIN users u ON u.id = m.user_id
+         WHERE m.space_id = ?1 AND m.role = 'admin' AND u.is_active = 1",
+        params![space_id],
+        |row| row.get(0),
+    )?;
+    let target_active: bool = conn.query_row(
+        "SELECT is_active FROM users WHERE id = ?1",
+        params![user_id],
+        |row| row.get(0),
+    )?;
+    if target_active && active_admins <= 1 {
+        bail!("空间至少需要保留一位可用的管理员。");
+    }
+    Ok(())
+}
+
 pub async fn set_member_role(
     db: &Database,
     space_id: i64,
@@ -242,14 +270,7 @@ pub async fn set_member_role(
             bail!("成员不存在。");
         };
         if current == "admin" && role != Role::Admin {
-            let admins: i64 = tx.query_row(
-                "SELECT COUNT(*) FROM memberships WHERE space_id = ?1 AND role = 'admin'",
-                params![space_id],
-                |row| row.get(0),
-            )?;
-            if admins <= 1 {
-                bail!("空间至少需要保留一位管理员。");
-            }
+            require_another_active_admin(&tx, space_id, user_id)?;
         }
         tx.execute(
             "UPDATE memberships SET role = ?1 WHERE space_id = ?2 AND user_id = ?3",
@@ -275,14 +296,7 @@ pub async fn remove_member(db: &Database, space_id: i64, user_id: i64) -> Result
             bail!("成员不存在。");
         };
         if current == "admin" {
-            let admins: i64 = tx.query_row(
-                "SELECT COUNT(*) FROM memberships WHERE space_id = ?1 AND role = 'admin'",
-                params![space_id],
-                |row| row.get(0),
-            )?;
-            if admins <= 1 {
-                bail!("空间至少需要保留一位管理员。");
-            }
+            require_another_active_admin(&tx, space_id, user_id)?;
         }
         tx.execute(
             "DELETE FROM memberships WHERE space_id = ?1 AND user_id = ?2",
@@ -325,11 +339,18 @@ pub async fn create_space(
              VALUES (?1, ?2, ?3, ?4, ?5)",
             params![slug, name, description, created_by, now],
         )
-        .map_err(|error| match error {
-            rusqlite::Error::SqliteFailure(_, Some(ref message)) if message.contains("UNIQUE") => {
+        .map_err(|error| {
+            // Scoped to the exact constraint instead of "any UNIQUE failure",
+            // so unrelated database problems still surface as real errors.
+            if error
+                .to_string()
+                .contains("UNIQUE constraint failed: spaces.slug")
+            {
                 anyhow!("空间标识已被使用。")
+            } else {
+                tracing::warn!(error = %error, "inserting space failed");
+                anyhow!(error)
             }
-            _ => anyhow!(error),
         })?;
         let space_id = tx.last_insert_rowid();
         tx.execute(
@@ -377,7 +398,7 @@ pub async fn summaries(db: &Database) -> Result<Vec<SpaceSummary>> {
              FROM spaces s
              ORDER BY s.name COLLATE NOCASE",
         )?;
-        let mut rows = stmt
+        let rows = stmt
             .query_map([], |row| {
                 Ok((
                     map_space(row)?,
@@ -388,26 +409,36 @@ pub async fn summaries(db: &Database) -> Result<Vec<SpaceSummary>> {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        let mut result = Vec::with_capacity(rows.len());
-        for (space, member_count, public_links, private_links) in rows.drain(..) {
-            let mut admins_stmt = conn.prepare(
-                "SELECT u.display_name FROM memberships m
-                 JOIN users u ON u.id = m.user_id
-                 WHERE m.space_id = ?1 AND m.role = 'admin'
-                 ORDER BY u.display_name COLLATE NOCASE",
-            )?;
-            let admins = admins_stmt
-                .query_map(params![space.id], |row| row.get(0))?
-                .collect::<rusqlite::Result<Vec<String>>>()?;
-            result.push(SpaceSummary {
-                space,
-                member_count,
-                public_links,
-                private_links,
-                admins,
+        // One extra query for every admin in every space, instead of one per
+        // space.
+        let mut admin_stmt = conn.prepare(
+            "SELECT m.space_id, u.display_name FROM memberships m
+             JOIN users u ON u.id = m.user_id
+             WHERE m.role = 'admin'
+             ORDER BY m.space_id, u.display_name COLLATE NOCASE",
+        )?;
+        let admins_by_space: HashMap<i64, Vec<String>> = admin_stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .fold(HashMap::new(), |mut acc, (space_id, name)| {
+                acc.entry(space_id).or_default().push(name);
+                acc
             });
-        }
-        Ok(result)
+
+        Ok(rows
+            .into_iter()
+            .map(|(space, member_count, public_links, private_links)| {
+                let admins = admins_by_space.get(&space.id).cloned().unwrap_or_default();
+                SpaceSummary {
+                    space,
+                    member_count,
+                    public_links,
+                    private_links,
+                    admins,
+                }
+            })
+            .collect())
     })
     .await
 }

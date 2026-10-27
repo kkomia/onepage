@@ -15,8 +15,8 @@ use crate::models::{LinkRecord, Role, SessionUser, SpaceAccess};
 use crate::services::{favicon, links, spaces};
 use crate::state::AppState;
 use crate::util::{
-    format_date, host_label, normalize_url, validate_category_name, validate_description,
-    validate_link_title, validate_space_name,
+    format_date, host_label, normalize_url, pinyin_index, validate_category_name,
+    validate_description, validate_link_title, validate_space_name,
 };
 use crate::web;
 
@@ -212,7 +212,7 @@ async fn create_link_inner(
             .await;
         }
     };
-    refresh_icon_sync(&state, created.id).await;
+    state.refresh_icon_in_background(created.id);
     Ok(Redirect::to(&format!("{next}?ok=link_created")).into_response())
 }
 
@@ -278,7 +278,7 @@ async fn update_link_inner(
     )
     .await?;
     if url_changed || updated.icon_hash.is_none() {
-        refresh_icon_sync(&state, updated.id).await;
+        state.refresh_icon_in_background(updated.id);
     }
     Ok(Redirect::to(&format!("{next}?ok=link_updated")).into_response())
 }
@@ -822,22 +822,25 @@ async fn render_links(
         .collect();
 
     let total = public_links.len() as i64;
+    let needle = q.to_lowercase();
     let mut rows = Vec::new();
     for link in &public_links {
         let category_name = link
             .category_id
             .and_then(|id| category_names.get(&id).cloned())
             .unwrap_or_else(|| "未分类".to_string());
-        if !q.is_empty() {
+        if !needle.is_empty() {
+            // Same index the member view searches, so "sjzl" works here too.
+            let (py, pyi) = pinyin_index(&format!("{} {}", link.title, category_name));
             let haystack = format!(
-                "{} {} {} {}",
+                "{} {} {} {} {py} {pyi}",
                 link.title,
                 link.url,
                 link.description,
                 category_name
             )
             .to_lowercase();
-            if !haystack.contains(&q.to_lowercase()) {
+            if !haystack.contains(&needle) {
                 continue;
             }
         }
@@ -1100,12 +1103,14 @@ fn dialog_from_form(
     })
 }
 
+/// Only for the explicit "刷新图标" button, where the operator waits for the
+/// outcome. Saving a link uses `refresh_icon_in_background` instead.
 async fn refresh_icon_sync(state: &AppState, link_id: i64) -> Option<String> {
     if !state.config.icon_fetch {
         return None;
     }
     let future = favicon::refresh_for_link(&state.db, &state.http, &state.config, link_id);
-    match tokio::time::timeout(Duration::from_secs(5), future).await {
+    match tokio::time::timeout(Duration::from_secs(10), future).await {
         Ok(Ok(hash)) => hash,
         Ok(Err(error)) => {
             tracing::warn!(link_id, error = %error, "icon refresh failed");

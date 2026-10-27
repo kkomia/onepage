@@ -9,7 +9,7 @@ use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::{header, HeaderName, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch, post};
+use axum::routing::{get, patch, post, put};
 use axum::{Json, Router};
 use serde_json::json;
 use tower_http::compression::CompressionLayer;
@@ -29,13 +29,12 @@ pub fn router(state: AppState) -> Router {
             get(auth_pages::password_page).post(auth_pages::password_submit),
         )
         .route("/s/{space}", get(nav::page))
-        .route("/s/{space}/mine", get(nav::mine))
         .route("/go/{id}", get(nav::go_link))
         .route("/icons/{hash}", get(nav::icon))
         .route("/api/s/{space}/links", post(api::create_link))
         .route(
             "/api/s/{space}/links/{id}",
-            patch(api::update_link).delete(api::delete_link),
+            put(api::update_link).delete(api::delete_link),
         )
         .route(
             "/api/s/{space}/links/{id}/refresh-icon",
@@ -120,8 +119,7 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/admin/site",
             get(admin_global::site_page).post(admin_global::update_site),
-        )
-        .layer(CompressionLayer::new());
+        );
 
     let assets = Router::new()
         .route("/assets/{*path}", get(assets::serve))
@@ -139,6 +137,8 @@ pub fn router(state: AppState) -> Router {
             state.clone(),
             security_headers,
         ))
+        // Applies to /assets/* as well, which the page router used to cover alone.
+        .layer(CompressionLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(DefaultBodyLimit::max(128 * 1024))
         .with_state(state)

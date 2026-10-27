@@ -82,6 +82,7 @@ struct FileConfig {
     session_days: Option<i64>,
     log: Option<String>,
     icon_fetch: Option<bool>,
+    icon_allow_private: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +95,7 @@ pub struct Config {
     pub session_days: i64,
     pub log_filter: String,
     pub icon_fetch: bool,
+    pub icon_allow_private: bool,
     pub config_path: Option<PathBuf>,
     pub dev: bool,
 }
@@ -154,6 +156,11 @@ impl Config {
         let icon_fetch = env_bool("ONEPAGE_ICON_FETCH")
             .or(file.icon_fetch)
             .unwrap_or(true);
+        // Loopback and metadata ranges are always refused; this only governs
+        // RFC1918 / ULA targets, which intranet navigators legitimately use.
+        let icon_allow_private = env_bool("ONEPAGE_ICON_ALLOW_PRIVATE")
+            .or(file.icon_allow_private)
+            .unwrap_or(true);
 
         fs::create_dir_all(&data_dir)
             .with_context(|| format!("无法创建数据目录 {}", data_dir.display()))?;
@@ -170,6 +177,7 @@ impl Config {
             session_days,
             log_filter,
             icon_fetch,
+            icon_allow_private,
             config_path,
             dev: cfg!(debug_assertions),
         })

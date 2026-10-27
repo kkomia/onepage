@@ -1,4 +1,4 @@
-use axum::extract::{Path, Query, RawQuery, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 use axum_extra::extract::cookie::CookieJar;
@@ -27,14 +27,6 @@ pub async fn page(
         Ok(response) => response,
         Err(error) => error.into_response(),
     }
-}
-
-pub async fn mine(Path(space_slug): Path<String>, RawQuery(query): RawQuery) -> Redirect {
-    let target = match query.as_deref() {
-        Some(query) if !query.is_empty() => format!("/s/{space_slug}?{query}"),
-        _ => format!("/s/{space_slug}"),
-    };
-    Redirect::to(&target)
 }
 
 async fn page_inner(

@@ -20,7 +20,10 @@ use crate::util::{now_unix, random_hex, sha256_hex};
 
 pub const SESSION_COOKIE: &str = "onepage_session";
 const THROTTLE_WINDOW: StdDuration = StdDuration::from_secs(10 * 60);
-const THROTTLE_LIMIT: usize = 8;
+const ACCOUNT_LIMIT: usize = 8;
+// One address gets a larger budget than one account, so that trying many
+// usernames from the same client is still bounded.
+const ADDRESS_LIMIT: usize = 20;
 
 pub async fn hash_password(password: &str) -> Result<String> {
     let password = password.to_string();
@@ -297,26 +300,41 @@ pub struct LoginThrottle {
 }
 
 impl LoginThrottle {
-    pub fn blocked_for(&self, key: &str) -> Option<u64> {
-        let mut attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn blocked_for(&self, account_key: &str, address_key: &str) -> Option<u64> {
+        let attempts = self.attempts.lock().unwrap_or_else(|error| error.into_inner());
         let now = Instant::now();
-        let list = attempts.entry(key.to_string()).or_default();
-        list.retain(|instant| now.duration_since(*instant) < THROTTLE_WINDOW);
-        if list.len() >= THROTTLE_LIMIT {
-            let oldest = list.first().copied().unwrap_or(now);
+        [
+            (account_key, ACCOUNT_LIMIT),
+            (address_key, ADDRESS_LIMIT),
+        ]
+        .into_iter()
+        .filter_map(|(key, limit)| {
+            // Reading must not create entries, or unauthenticated traffic would
+            // grow the map on its own.
+            let list = attempts.get(key)?;
+            let recent = list
+                .iter()
+                .filter(|instant| now.duration_since(**instant) < THROTTLE_WINDOW)
+                .copied()
+                .collect::<Vec<_>>();
+            if recent.len() < limit {
+                return None;
+            }
+            let oldest = recent.first().copied().unwrap_or(now);
             let left = THROTTLE_WINDOW.saturating_sub(now.duration_since(oldest));
             Some(left.as_secs().max(1))
-        } else {
-            None
-        }
+        })
+        .min()
     }
 
-    pub fn record_failure(&self, key: &str) {
-        let mut attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
+    pub fn record_failure(&self, account_key: &str, address_key: &str) {
+        let mut attempts = self.attempts.lock().unwrap_or_else(|error| error.into_inner());
         let now = Instant::now();
-        let list = attempts.entry(key.to_string()).or_default();
-        list.retain(|instant| now.duration_since(*instant) < THROTTLE_WINDOW);
-        list.push(now);
+        for key in [account_key, address_key] {
+            let list = attempts.entry(key.to_string()).or_default();
+            list.retain(|instant| now.duration_since(*instant) < THROTTLE_WINDOW);
+            list.push(now);
+        }
         if attempts.len() > 5_000 {
             attempts.retain(|_, list| {
                 list.retain(|instant| now.duration_since(*instant) < THROTTLE_WINDOW);
@@ -325,8 +343,9 @@ impl LoginThrottle {
         }
     }
 
-    pub fn clear(&self, key: &str) {
-        let mut attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
-        attempts.remove(key);
+    pub fn clear(&self, account_key: &str, address_key: &str) {
+        let mut attempts = self.attempts.lock().unwrap_or_else(|error| error.into_inner());
+        attempts.remove(account_key);
+        attempts.remove(address_key);
     }
 }

@@ -161,16 +161,26 @@ pub fn host_label(raw: &str) -> String {
 pub fn pinyin_index(input: &str) -> (String, String) {
     let mut full = String::with_capacity(input.len() * 2);
     let mut initials = String::with_capacity(input.len());
+    // ASCII words contribute their leading letter to the acronym too, so that
+    // "gl" finds "GitLab" the same way "sjzl" finds "数据治理".
+    let mut at_word_start = true;
 
     for (ch, pinyin) in input.chars().zip(input.to_pinyin()) {
         match pinyin {
             Some(p) => {
                 full.push_str(p.plain());
                 initials.push_str(p.first_letter());
+                at_word_start = true;
             }
             None => {
                 if ch.is_ascii_alphanumeric() {
+                    if at_word_start || ch.is_ascii_uppercase() {
+                        initials.push(ch.to_ascii_lowercase());
+                    }
                     full.push(ch.to_ascii_lowercase());
+                    at_word_start = false;
+                } else {
+                    at_word_start = true;
                 }
             }
         }
@@ -228,6 +238,14 @@ mod tests {
         let (full, initials) = pinyin_index("数据治理 GitLab");
         assert!(full.contains("shuju"));
         assert!(initials.contains("sjzl"));
+        assert!(initials.contains("gl"), "english acronyms index too: {initials}");
+    }
+
+    #[test]
+    fn pinyin_keeps_chinese_only_acronym() {
+        let (full, initials) = pinyin_index("数据治理");
+        assert_eq!(full, "shujuzhili");
+        assert_eq!(initials, "sjzl");
     }
 
     #[test]

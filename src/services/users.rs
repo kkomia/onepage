@@ -1,4 +1,6 @@
-use anyhow::{bail, Result};
+use std::collections::HashMap;
+
+use anyhow::{anyhow, bail, Result};
 use rusqlite::{params, OptionalExtension};
 
 use crate::db::Database;
@@ -44,24 +46,29 @@ pub async fn list_users(db: &Database) -> Result<Vec<UserRow>> {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        let mut result = Vec::with_capacity(users.len());
-        for (user, created_at) in users {
-            let mut spaces_stmt = conn.prepare(
-                "SELECT s.name FROM memberships m
-                 JOIN spaces s ON s.id = m.space_id
-                 WHERE m.user_id = ?1
-                 ORDER BY s.name COLLATE NOCASE",
-            )?;
-            let spaces = spaces_stmt
-                .query_map(params![user.id], |row| row.get(0))?
-                .collect::<rusqlite::Result<Vec<String>>>()?;
-            result.push(UserRow {
+        // One query for every membership instead of one per user.
+        let mut space_stmt = conn.prepare(
+            "SELECT m.user_id, s.name FROM memberships m
+             JOIN spaces s ON s.id = m.space_id
+             ORDER BY m.user_id, s.name COLLATE NOCASE",
+        )?;
+        let spaces_by_user: HashMap<i64, Vec<String>> = space_stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+            .into_iter()
+            .fold(HashMap::new(), |mut acc, (user_id, name)| {
+                acc.entry(user_id).or_default().push(name);
+                acc
+            });
+
+        Ok(users
+            .into_iter()
+            .map(|(user, created_at)| UserRow {
+                spaces: spaces_by_user.get(&user.id).cloned().unwrap_or_default(),
                 user,
                 created_at,
-                spaces,
-            });
-        }
-        Ok(result)
+            })
+            .collect())
     })
     .await
 }
@@ -132,7 +139,7 @@ pub async fn create_user(
                 params![username],
                 |row| row.get(0),
             )
-            .ok();
+            .optional()?;
         if exists.is_some() {
             bail!("这个账号已经存在。");
         }
@@ -148,7 +155,18 @@ pub async fn create_user(
                 must_change_password,
                 created_at
             ],
-        )?;
+        )
+        .map_err(|error| {
+            // Reachable when two admins create the same name at the same time.
+            if error
+                .to_string()
+                .contains("UNIQUE constraint failed: users.username")
+            {
+                anyhow!("这个账号已经存在。")
+            } else {
+                anyhow!(error)
+            }
+        })?;
         Ok(User {
             id: conn.last_insert_rowid(),
             username,

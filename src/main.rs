@@ -56,7 +56,7 @@ fn run_with_options(options: Options) -> Result<()> {
             return Ok(());
         }
         #[cfg(not(windows))]
-        bail!("--service 仅支持 Windows");
+        anyhow::bail!("--service 仅支持 Windows");
     }
 
     let config = config::Config::load(&options)?;
@@ -85,6 +85,11 @@ pub fn build_runtime() -> Result<tokio::runtime::Runtime> {
 
 pub async fn prepare(config: &config::Config) -> Result<(AppState, TcpListener)> {
     let state = AppState::new(config.clone())?;
+    match services::favicon::prune_orphan_icons(&state.db).await {
+        Ok(0) => {}
+        Ok(count) => tracing::info!(count, "已清理不再被任何链接引用的图标"),
+        Err(error) => tracing::warn!(error = %error, "图标清理跳过"),
+    }
     let listener = TcpListener::bind(config.bind)
         .await
         .with_context(|| format!("无法监听 {}", config.bind))?;

@@ -1,11 +1,12 @@
+use std::net::{IpAddr, ToSocketAddrs};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use regex::Regex;
 use rusqlite::{params, OptionalExtension};
+use tokio::sync::Semaphore;
 use tokio::task::spawn_blocking;
-use ureq::ResponseExt;
 use url::Url;
 
 use crate::config::Config;
@@ -15,6 +16,11 @@ use crate::util::{now_rfc3339, sha256_bytes_short};
 
 const MAX_BODY: u64 = 512 * 1024;
 const MAX_ICON: usize = 256 * 1024;
+const FETCH_BUDGET: Duration = Duration::from_secs(4);
+const MAX_HOPS: usize = 3;
+const MAX_CONCURRENT_FETCHES: usize = 4;
+
+static ICON_GATE: Semaphore = Semaphore::const_new(MAX_CONCURRENT_FETCHES);
 
 pub fn build_agent(_config: &Config) -> ureq::Agent {
     let tls = ureq::tls::TlsConfig::builder()
@@ -23,12 +29,91 @@ pub fn build_agent(_config: &Config) -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(Duration::from_secs(6)))
         .timeout_connect(Some(Duration::from_secs(4)))
-        .max_redirects(3)
+        // Redirects are followed by `guarded_get` so that every hop is checked
+        // for internal addresses before the request leaves the process.
+        .max_redirects(0)
         .http_status_as_error(false)
         .user_agent(format!("OnePage/{}", env!("CARGO_PKG_VERSION")))
         .tls_config(tls)
         .build();
     ureq::Agent::new_with_config(config)
+}
+
+/// Whether the server may fetch this URL. Loopback, link-local (including cloud
+/// metadata endpoints), multicast and unspecified addresses are always refused;
+/// site-local ranges are refused unless `allow_private` is set, because an
+/// intranet navigator legitimately points at internal hosts.
+pub fn address_allowed(ip: IpAddr, allow_private: bool) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            if v4.is_loopback() || v4.is_link_local() || v4.is_unspecified() {
+                return false;
+            }
+            if v4.is_multicast() || v4.is_broadcast() || v4.octets()[0] >= 240 {
+                return false;
+            }
+            if !allow_private && (v4.is_private() || is_cgnat(v4)) {
+                return false;
+            }
+            true
+        }
+        IpAddr::V6(v6) => {
+            if v6.is_loopback() || v6.is_unspecified() {
+                return false;
+            }
+            let first = v6.segments()[0];
+            // fe80::/10 link-local and ff00::/8 multicast.
+            if first & 0xffc0 == 0xfe80 || first & 0xff00 == 0xff00 {
+                return false;
+            }
+            // fc00::/7 unique-local and 2002::/16 Teredo (embeds IPv4 targets).
+            if !allow_private && (first & 0xfe00 == 0xfc00 || first == 0x2001 && v6.segments()[1] == 0xdb8)
+            {
+                return false;
+            }
+            true
+        }
+    }
+}
+
+fn is_cgnat(ip: std::net::Ipv4Addr) -> bool {
+    let octets = ip.octets();
+    octets[0] == 100 && (64..=127).contains(&octets[1])
+}
+
+fn host_addresses(url: &Url) -> Option<Vec<IpAddr>> {
+    let host = url.host_str()?;
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return Some(vec![ip]);
+    }
+    let port = url.port_or_known_default()?;
+    let resolved = (host, port).to_socket_addrs().ok()?;
+    let addresses = resolved.map(|socket| socket.ip()).collect::<Vec<_>>();
+    // Fail closed: an unresolvable host must not be fetched.
+    if addresses.is_empty() {
+        return None;
+    }
+    Some(addresses)
+}
+
+pub fn url_allowed(url: &Url, allow_private: bool) -> bool {
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    if url.host_str().is_none() {
+        return false;
+    }
+    match host_addresses(url) {
+        // Metadata services such as 169.254.169.254 are reachable through DNS
+        // too, so every resolved record has to pass the check.
+        Some(addresses) => addresses
+            .into_iter()
+            .all(|ip| address_allowed(ip, allow_private)),
+        None => false,
+    }
 }
 
 pub async fn refresh_for_link(
@@ -46,12 +131,27 @@ pub async fn refresh_for_link(
     let Some(link_url) = Url::parse(&link.url).ok() else {
         return Ok(None);
     };
+
     let agent = agent.clone();
     let source_url = link_url.to_string();
 
+    // The permit is held for the whole fetch, so a slow internet cannot occupy
+    // more than MAX_CONCURRENT_FETCHES blocking threads at a time.
+    let permit = match ICON_GATE.try_acquire() {
+        Ok(permit) => permit,
+        Err(_) => {
+            tracing::debug!(link_id, "icon fetch skipped, concurrency limit reached");
+            return Ok(None);
+        }
+    };
+    let allow_private = config.icon_allow_private;
+
     let fetched = tokio::time::timeout(
-        Duration::from_secs(10),
-        spawn_blocking(move || fetch_icon(&agent, &link_url)),
+        FETCH_BUDGET + Duration::from_secs(6),
+        spawn_blocking(move || {
+            let _permit = permit;
+            fetch_icon(&agent, &link_url, allow_private)
+        }),
     )
     .await
     .ok()
@@ -93,6 +193,20 @@ pub async fn refresh_for_link(
     Ok(Some(hash))
 }
 
+/// Deletes icon blobs that no longer reference any link. Rows only ever grow
+/// otherwise, and the database directory doubles as the backup unit.
+pub async fn prune_orphan_icons(db: &Database) -> Result<u64> {
+    db.call(move |conn| {
+        let changed = conn.execute(
+            "DELETE FROM icons
+             WHERE id NOT IN (SELECT icon_id FROM links WHERE icon_id IS NOT NULL)",
+            [],
+        )? as u64;
+        Ok(changed)
+    })
+    .await
+}
+
 pub async fn icon_by_hash(
     db: &Database,
     hash: &str,
@@ -116,65 +230,121 @@ struct FetchedIcon {
     bytes: Vec<u8>,
 }
 
-fn fetch_icon(agent: &ureq::Agent, page_url: &Url) -> Option<FetchedIcon> {
+struct Budget {
+    deadline: Instant,
+}
+
+impl Budget {
+    fn new() -> Self {
+        Self {
+            deadline: Instant::now() + FETCH_BUDGET,
+        }
+    }
+
+    fn expired(&self) -> bool {
+        Instant::now() >= self.deadline
+    }
+}
+
+/// Fetches a URL, following redirects by hand so that each hop is re-checked
+/// against the address policy before the request is sent.
+fn guarded_get(
+    agent: &ureq::Agent,
+    start: &Url,
+    accept: &str,
+    budget: &Budget,
+    allow_private: bool,
+) -> Option<(Url, Vec<u8>)> {
+    let mut current = start.clone();
+    for _ in 0..=MAX_HOPS {
+        if budget.expired() || !url_allowed(&current, allow_private) {
+            return None;
+        }
+        let mut response = agent
+            .get(current.as_str())
+            .header("Accept", accept)
+            .call()
+            .ok()?;
+        let status = response.status();
+        if status.is_success() {
+            let bytes = response
+                .body_mut()
+                .with_config()
+                .limit(MAX_BODY)
+                .read_to_vec()
+                .ok()?;
+            return Some((current, bytes));
+        }
+        if !status.is_redirection() {
+            return None;
+        }
+        let location = response
+            .headers()
+            .get("location")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)?;
+        current = current.join(&location).ok()?;
+    }
+    None
+}
+
+fn fetch_icon(agent: &ureq::Agent, page_url: &Url, allow_private: bool) -> Option<FetchedIcon> {
     let started = Instant::now();
+    let budget = Budget::new();
     let looks_like_image = [".png", ".ico", ".jpg", ".jpeg", ".gif", ".webp"]
         .iter()
         .any(|ext| page_url.path().to_ascii_lowercase().ends_with(ext));
 
     if looks_like_image {
-        if let Some(icon) = fetch_image(agent, page_url.as_str()) {
+        if let Some(icon) = fetch_image(agent, page_url, &budget, allow_private) {
             tracing::debug!(url = %page_url, elapsed = ?started.elapsed(), "icon fetched from link");
             return Some(icon);
         }
     }
 
     if let Ok(root_icon) = page_url.join("/favicon.ico") {
-        if let Some(icon) = fetch_image(agent, root_icon.as_str()) {
+        if let Some(icon) = fetch_image(agent, &root_icon, &budget, allow_private) {
             tracing::debug!(url = %root_icon, elapsed = ?started.elapsed(), "icon fetched from favicon.ico");
             return Some(icon);
         }
     }
 
-    let Ok(response) = agent
-        .get(page_url.as_str())
-        .header("Accept", "text/html,application/xhtml+xml")
-        .call()
-    else {
-        return None;
-    };
-    if !response.status().is_success() {
-        return None;
-    }
-    let final_url = response
-        .get_uri()
-        .to_string()
-        .parse::<Url>()
-        .unwrap_or_else(|_| page_url.clone());
-    let mut response = response;
-    let bytes = response
-        .body_mut()
-        .with_config()
-        .limit(MAX_BODY)
-        .read_to_vec()
-        .ok()?;
-    let html = String::from_utf8_lossy(&bytes);
+    let page = guarded_get(
+        agent,
+        page_url,
+        "text/html,application/xhtml+xml",
+        &budget,
+        allow_private,
+    );
 
-    for candidate in icon_candidates(&html) {
-        let Ok(icon_url) = final_url.join(&candidate) else {
-            continue;
-        };
-        if !matches!(icon_url.scheme(), "http" | "https") {
-            continue;
+    if let Some((final_url, bytes)) = page {
+        // The URL may have answered with an image directly instead of HTML, so
+        // reuse those bytes rather than requesting the same address twice.
+        if !looks_like_image && bytes.len() >= 32 && bytes.len() <= MAX_ICON {
+            if let Some(content_type) = sniff_image(&bytes) {
+                return Some(FetchedIcon {
+                    content_type,
+                    bytes,
+                });
+            }
         }
-        if let Some(icon) = fetch_image(agent, icon_url.as_str()) {
-            tracing::debug!(url = %icon_url, elapsed = ?started.elapsed(), "icon fetched from link rel");
-            return Some(icon);
+        let html = String::from_utf8_lossy(&bytes);
+        for candidate in icon_candidates(&html) {
+            let Ok(icon_url) = final_url.join(&candidate) else {
+                continue;
+            };
+            if !matches!(icon_url.scheme(), "http" | "https") {
+                continue;
+            }
+            if let Some(icon) = fetch_image(agent, &icon_url, &budget, allow_private) {
+                tracing::debug!(url = %icon_url, elapsed = ?started.elapsed(), "icon fetched from link rel");
+                return Some(icon);
+            }
         }
-    }
-
-    if !looks_like_image {
-        if let Some(icon) = fetch_image(agent, page_url.as_str()) {
+    } else if !looks_like_image {
+        // Nothing readable came back as HTML; the address may still be an image
+        // without a recognised extension.
+        if let Some(icon) = fetch_image(agent, page_url, &budget, allow_private) {
             return Some(icon);
         }
     }
@@ -182,21 +352,19 @@ fn fetch_icon(agent: &ureq::Agent, page_url: &Url) -> Option<FetchedIcon> {
     None
 }
 
-fn fetch_image(agent: &ureq::Agent, url: &str) -> Option<FetchedIcon> {
-    let mut response = agent
-        .get(url)
-        .header("Accept", "image/png,image/x-icon,image/vnd.microsoft.icon,image/jpeg,image/webp,image/*;q=0.8")
-        .call()
-        .ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    let bytes = response
-        .body_mut()
-        .with_config()
-        .limit(MAX_BODY)
-        .read_to_vec()
-        .ok()?;
+fn fetch_image(
+    agent: &ureq::Agent,
+    url: &Url,
+    budget: &Budget,
+    allow_private: bool,
+) -> Option<FetchedIcon> {
+    let (_final_url, bytes) = guarded_get(
+        agent,
+        url,
+        "image/png,image/x-icon,image/vnd.microsoft.icon,image/jpeg,image/webp,image/*;q=0.8",
+        budget,
+        allow_private,
+    )?;
     if bytes.len() < 32 || bytes.len() > MAX_ICON {
         return None;
     }
@@ -283,7 +451,86 @@ pub async fn spawn_refresh(
     link_id: i64,
 ) {
     let result = refresh_for_link(&db, &agent, &config, link_id).await;
-    if let Err(error) = result {
-        tracing::debug!(link_id, error = %error, "icon refresh failed");
+    match result {
+        Ok(Some(hash)) => {
+            tracing::debug!(link_id, hash, "icon fetched in background");
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::debug!(link_id, error = %error, "icon refresh failed");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ip(raw: &str) -> IpAddr {
+        raw.parse::<IpAddr>().expect("test address")
+    }
+
+    #[test]
+    fn loopback_link_local_and_metadata_are_always_refused() {
+        for raw in [
+            "127.0.0.1",
+            "127.5.6.7",
+            "0.0.0.0",
+            "169.254.169.254",
+            "224.0.0.1",
+            "255.255.255.255",
+            "::1",
+            "fe80::1234",
+            "ff02::1",
+        ] {
+            let address = ip(raw);
+            assert!(
+                !address_allowed(address, true) && !address_allowed(address, false),
+                "{raw} must never be fetched"
+            );
+        }
+    }
+
+    #[test]
+    fn site_local_follows_the_switch_only() {
+        for raw in ["10.1.2.3", "172.16.5.6", "192.168.10.10", "100.64.0.1", "fd00::1"] {
+            let address = ip(raw);
+            assert!(address_allowed(address, true), "{raw} allowed when enabled");
+            assert!(!address_allowed(address, false), "{raw} refused when disabled");
+        }
+    }
+
+    #[test]
+    fn public_addresses_pass() {
+        for raw in ["8.8.8.8", "93.184.216.34", "2606:2800:220:1:248:1893:25c8:1946"] {
+            assert!(address_allowed(ip(raw), false), "{raw} is public");
+            assert!(address_allowed(ip(raw), true), "{raw} is public");
+        }
+    }
+
+    #[test]
+    fn url_policy_rejects_non_http_and_credentials() {
+        // These all short-circuit before any DNS lookup happens.
+        assert!(!url_allowed(&Url::parse("file:///etc/passwd").unwrap(), true));
+        assert!(!url_allowed(&Url::parse("ftp://10.0.0.1/logo.png").unwrap(), true));
+        assert!(!url_allowed(
+            &Url::parse("http://user:pass@8.8.8.8/").unwrap(),
+            true
+        ));
+        assert!(!url_allowed(
+            &Url::parse("https://admin@169.254.169.254/").unwrap(),
+            true
+        ));
+    }
+
+    #[test]
+    fn url_policy_refuses_internal_literal_hosts() {
+        assert!(!url_allowed(
+            &Url::parse("http://169.254.169.254/latest/user-data").unwrap(),
+            true
+        ));
+        assert!(!url_allowed(&Url::parse("http://[::1]:8686/").unwrap(), true));
+        assert!(url_allowed(&Url::parse("http://10.0.0.7/logo.png").unwrap(), true));
+        assert!(!url_allowed(&Url::parse("http://10.0.0.7/logo.png").unwrap(), false));
     }
 }
