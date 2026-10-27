@@ -1,0 +1,50 @@
+[package]
+name = "onepage"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.99"
+description = "OnePage — a warm, self-hosted team link navigator"
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+argon2 = "0.5"
+axum = { version = "0.8", features = ["json", "form", "query"] }
+axum-extra = { version = "0.12", features = ["cookie"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+cookie = "0.18"
+hex = "0.4"
+minijinja = { version = "3", features = ["serde"] }
+mime_guess = "2"
+pinyin = "0.11"
+r2d2 = "0.8"
+r2d2_sqlite = "0.35"
+rand = "0.8"
+regex = "1"
+rusqlite = { version = "0.40", features = ["bundled"] }
+rust-embed = "8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "sync"] }
+toml = "0.8"
+tower = "0.5"
+tower-http = { version = "0.7", features = ["compression-gzip", "compression-br", "trace"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+ureq = { version = "3", features = ["gzip", "platform-verifier"] }
+url = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

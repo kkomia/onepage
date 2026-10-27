@@ -1,0 +1,156 @@
+{% extends "admin_base.html" %}
+
+{% block header_actions %}
+<a class="btn btn-primary" href="?dialog=new">
+  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg>
+  <span>新增链接</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<section class="admin-panel">
+  <div class="panel-toolbar">
+    <form method="get" class="search-inline" role="search">
+      <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-search"></use></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="筛选名称、网址或分类" aria-label="筛选公共导航">
+    </form>
+    <span class="toolbar-count">{% if query %}筛出 {{ filtered }} / {{ total }} 个{% else %}共 {{ total }} 个链接{% endif %}</span>
+  </div>
+
+  {% if links %}
+  <div class="table-wrap">
+    <table class="admin-table link-table">
+      <thead>
+        <tr>
+          <th class="col-name">名称</th>
+          <th>分类</th>
+          <th class="col-number">点击</th>
+          <th class="col-date">更新</th>
+          <th class="col-actions"><span class="sr-only">操作</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for link in links %}
+        <tr>
+          <td>
+            <div class="entity-cell">
+              {% if link.icon_url %}
+              <img class="site-icon" src="{{ link.icon_url }}" alt="" width="32" height="32" loading="lazy">
+              {% else %}
+              <span class="site-icon site-icon-fallback tone-{{ link.tone }}" aria-hidden="true">{{ link.initial }}</span>
+              {% endif %}
+              <div class="entity-copy">
+                <a class="entity-title" href="{{ link.url }}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">{{ link.title }}</a>
+                <span class="entity-url">{{ link.host }}</span>
+              </div>
+            </div>
+          </td>
+          <td><span class="meta-pill">{{ link.category_name }}</span></td>
+          <td class="col-number">{{ link.click_count }}</td>
+          <td class="col-date">{{ link.updated_at_label }}</td>
+          <td class="col-actions">
+            <div class="row-actions">
+              <form method="post" action="/s/{{ space.slug }}/admin/links/{{ link.id }}/move">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden" name="dir" value="up">
+                <button class="icon-btn icon-btn-sm" type="submit" aria-label="上移" title="上移" {% if loop.first %}disabled{% endif %}>
+                  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-up"></use></svg>
+                </button>
+              </form>
+              <form method="post" action="/s/{{ space.slug }}/admin/links/{{ link.id }}/move">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden" name="dir" value="down">
+                <button class="icon-btn icon-btn-sm" type="submit" aria-label="下移" title="下移" {% if loop.last %}disabled{% endif %}>
+                  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-down"></use></svg>
+                </button>
+              </form>
+              <form method="post" action="/s/{{ space.slug }}/admin/links/{{ link.id }}/icon">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="icon-btn icon-btn-sm" type="submit" aria-label="刷新图标" title="刷新图标">
+                  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-refresh"></use></svg>
+                </button>
+              </form>
+              <a class="icon-btn icon-btn-sm" href="?dialog=edit&edit={{ link.id }}" aria-label="编辑 {{ link.title }}" title="编辑">
+                <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-edit"></use></svg>
+              </a>
+              <form method="post" action="/s/{{ space.slug }}/admin/links/{{ link.id }}/delete" data-confirm="删除「{{ link.title }}」？该操作只影响公共导航，链接本身不会失效。">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="icon-btn icon-btn-sm icon-btn-danger" type="submit" aria-label="删除 {{ link.title }}" title="删除">
+                  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-trash"></use></svg>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="admin-empty">
+    <span class="admin-empty-mark" aria-hidden="true">
+      <svg class="icon"><use href="/assets/icons.svg#i-link"></use></svg>
+    </span>
+    {% if query %}
+    <h2>没有匹配的链接</h2>
+    <p>换个关键词，或清空筛选看看全部入口。</p>
+    <a class="btn btn-secondary" href="/s/{{ space.slug }}/admin/links">清空筛选</a>
+    {% else %}
+    <h2>公共导航还是空的</h2>
+    <p>添加第一个团队入口，成员登录后就能看到。</p>
+    <a class="btn btn-primary" href="?dialog=new">
+      <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg>
+      <span>添加第一个链接</span>
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+
+{% if dialog and dialog.open %}
+<dialog class="modal" id="link-dialog" data-open="true">
+  <div class="modal-head">
+    <div>
+      <p class="eyebrow">公共导航</p>
+      <h2>{{ dialog.title }}</h2>
+    </div>
+    <button type="button" class="icon-btn" data-dialog-close aria-label="关闭">
+      <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-close"></use></svg>
+    </button>
+  </div>
+  <form method="post" action="{{ dialog.action }}" class="modal-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if dialog.error %}
+    <div class="form-alert" role="alert">{{ dialog.error }}</div>
+    {% endif %}
+    <label class="field">
+      <span class="field-label">名称</span>
+      <input class="input" type="text" name="title" value="{{ dialog.values.title }}" required maxlength="80" placeholder="例如 数据质量算子仓库">
+    </label>
+    <label class="field">
+      <span class="field-label">网址</span>
+      <input class="input" type="text" name="url" value="{{ dialog.values.url }}" required maxlength="2048" spellcheck="false" placeholder="git.example.com/data/quality">
+      <span class="field-note">可省略 https://；保存后会自动补全。</span>
+    </label>
+    <label class="field">
+      <span class="field-label">分类</span>
+      <select class="input select" name="category_id">
+        <option value="" {% if not dialog.values.category_id %}selected{% endif %}>未分类</option>
+        {% for category in categories %}
+        <option value="{{ category.id }}" {% if dialog.values.category_id == category.id %}selected{% endif %}>{{ category.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="field">
+      <span class="field-label">描述</span>
+      <textarea class="input textarea" name="description" maxlength="280" rows="3" placeholder="一句话说明这个入口的用途">{{ dialog.values.description }}</textarea>
+      <span class="field-note">可以留空。描述会帮助成员搜索到它。</span>
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-dialog-close>取消</button>
+      <button type="submit" class="btn btn-primary">保存链接</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

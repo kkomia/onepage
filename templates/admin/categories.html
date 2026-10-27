@@ -1,0 +1,97 @@
+{% extends "admin_base.html" %}
+
+{% block header_actions %}
+<a class="btn btn-secondary" href="/s/{{ space.slug }}/admin/links">查看公共导航</a>
+<button class="btn btn-primary" type="button" data-dialog-open="category-add-dialog">
+  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg>
+  <span>添加分类</span>
+</button>
+{% endblock %}
+
+{% block content %}
+<section class="admin-panel">
+  <div class="panel-head panel-head-row">
+    <div>
+      <h2>分类顺序</h2>
+      <p>成员登录后按这里的顺序看到分区。</p>
+    </div>
+    <span class="toolbar-count">{{ categories|length }} 个分类</span>
+  </div>
+
+  {% if categories %}
+  <div class="category-list">
+    {% for category in categories %}
+    <div class="category-item">
+      <div class="category-ordinal">{{ loop.index }}</div>
+      <form method="post" action="/s/{{ space.slug }}/admin/categories/{{ category.id }}" class="category-name-form">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input class="input input-quiet" type="text" name="name" value="{{ category.name }}" required maxlength="24" aria-label="分类名称">
+        <button class="btn btn-ghost btn-sm" type="submit">保存</button>
+      </form>
+      <span class="category-count">{{ category.count }} 个链接</span>
+      <div class="row-actions">
+        <form method="post" action="/s/{{ space.slug }}/admin/categories/{{ category.id }}/move">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="dir" value="up">
+          <button class="icon-btn icon-btn-sm" type="submit" aria-label="上移" title="上移" {% if loop.first %}disabled{% endif %}>
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-up"></use></svg>
+          </button>
+        </form>
+        <form method="post" action="/s/{{ space.slug }}/admin/categories/{{ category.id }}/move">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="dir" value="down">
+          <button class="icon-btn icon-btn-sm" type="submit" aria-label="下移" title="下移" {% if loop.last %}disabled{% endif %}>
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-down"></use></svg>
+          </button>
+        </form>
+        <form method="post" action="/s/{{ space.slug }}/admin/categories/{{ category.id }}/delete" data-confirm="删除分类「{{ category.name }}」？其中的 {{ category.count }} 个链接会移到未分类。">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="icon-btn icon-btn-sm icon-btn-danger" type="submit" aria-label="删除 {{ category.name }}" title="删除">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-trash"></use></svg>
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="panel-note">删除分类不会删除链接，只会把它们放回「未分类」。</p>
+  {% else %}
+  <div class="admin-empty admin-empty-compact">
+    <span class="admin-empty-mark" aria-hidden="true">
+      <svg class="icon"><use href="/assets/icons.svg#i-layers"></use></svg>
+    </span>
+    <h2>还没有分类</h2>
+    <p>先在顶部添加一个分类，再回到公共导航归档链接。</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block dialogs %}
+<dialog class="modal" id="category-add-dialog" {% if add_error %}data-open="true"{% endif %}>
+  <div class="modal-head">
+    <div>
+      <p class="eyebrow">公共导航</p>
+      <h2>添加分类</h2>
+    </div>
+    <button type="button" class="icon-btn" data-dialog-close aria-label="关闭">
+      <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-close"></use></svg>
+    </button>
+  </div>
+  <form method="post" action="/s/{{ space.slug }}/admin/categories" class="modal-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if add_error %}
+    <div class="form-alert" role="alert">{{ add_error }}</div>
+    {% endif %}
+    <label class="field">
+      <span class="field-label">分类名称</span>
+      <input class="input" type="text" name="name" value="{{ new_name }}" required maxlength="24" placeholder="例如 数据标准" autofocus>
+      <span class="field-note">分类用于给公共导航分段，也会出现在右侧快速定位里。</span>
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-dialog-close>取消</button>
+      <button type="submit" class="btn btn-primary">添加分类</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}

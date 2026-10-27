@@ -1,0 +1,19 @@
+services:
+  onepage:
+    build: .
+    image: onepage:latest
+    container_name: onepage
+    restart: unless-stopped
+    ports:
+      - "8686:8686"
+    environment:
+      ONEPAGE_BASE_URL: ${ONEPAGE_BASE_URL:-}
+      ONEPAGE_SECURE_COOKIES: ${ONEPAGE_SECURE_COOKIES:-}
+      ONEPAGE_ICON_FETCH: ${ONEPAGE_ICON_FETCH:-true}
+      ONEPAGE_SESSION_DAYS: ${ONEPAGE_SESSION_DAYS:-30}
+      ONEPAGE_LOG: ${ONEPAGE_LOG:-info}
+    volumes:
+      - onepage-data:/data
+
+volumes:
+  onepage-data:

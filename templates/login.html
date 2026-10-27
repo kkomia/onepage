@@ -1,0 +1,29 @@
+{% extends "auth_base.html" %}
+{% block title %}登录 · {{ site_name }}{% endblock %}
+{% block content %}
+<p class="eyebrow">欢迎回来</p>
+<h2>登录 {{ site_name }}</h2>
+<p class="auth-sub">使用管理员分配的账号进入团队空间。</p>
+
+{% if error %}
+<div class="form-alert" role="alert">{{ error }}</div>
+{% endif %}
+
+<form method="post" action="/login" class="form-stack">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label class="field">
+    <span class="field-label">账号</span>
+    <input class="input" type="text" name="username" value="{{ username }}" autocomplete="username" autofocus required maxlength="32" spellcheck="false">
+  </label>
+  <label class="field">
+    <span class="field-label">密码</span>
+    <input class="input" type="password" name="password" autocomplete="current-password" required maxlength="128">
+  </label>
+  <button class="btn btn-primary btn-block" type="submit">
+    <span>进入导航</span>
+    <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-right"></use></svg>
+  </button>
+</form>
+
+<p class="form-hint">忘记密码？请联系空间管理员重置。</p>
+{% endblock %}

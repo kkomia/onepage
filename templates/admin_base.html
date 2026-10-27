@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>{{ page_title }} · {{ site_name }}</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/fonts.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/assets/app.css?v={{ asset_version }}">
+  <script src="/assets/theme.js?v={{ asset_version }}"></script>
+</head>
+<body class="admin-page" data-page="admin">
+  <div class="admin-shell">
+    <aside class="admin-sidebar" id="admin-sidebar">
+      <div class="admin-sidebar-head">
+        <a class="brand" href="/" aria-label="{{ site_name }}">
+          <span class="brand-mark" aria-hidden="true"><span class="brand-orbit"></span><span class="brand-core"></span></span>
+          <span class="brand-word">{{ site_name }}</span>
+        </a>
+        <button type="button" class="icon-btn sidebar-close" data-sidebar-close aria-label="关闭菜单">
+          <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-close"></use></svg>
+        </button>
+      </div>
+
+      <div class="admin-context">
+        {% if is_global %}
+          <span class="context-label">系统管理</span>
+          <strong>全部空间</strong>
+        {% else %}
+          <span class="context-label">空间管理</span>
+          <strong>{{ space.name }}</strong>
+        {% endif %}
+      </div>
+
+      <nav class="admin-nav" aria-label="管理导航">
+        {% if is_global %}
+          <a class="admin-nav-item {% if nav == 'spaces' %}is-active{% endif %}" href="/admin/spaces">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-spaces"></use></svg><span>空间</span>
+          </a>
+          <a class="admin-nav-item {% if nav == 'users' %}is-active{% endif %}" href="/admin/users">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-users"></use></svg><span>用户</span>
+          </a>
+          <a class="admin-nav-item {% if nav == 'site' %}is-active{% endif %}" href="/admin/site">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-settings"></use></svg><span>站点</span>
+          </a>
+        {% else %}
+          <a class="admin-nav-item {% if nav == 'links' %}is-active{% endif %}" href="/s/{{ space.slug }}/admin/links">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-grid"></use></svg><span>公共导航</span>
+          </a>
+          <a class="admin-nav-item {% if nav == 'categories' %}is-active{% endif %}" href="/s/{{ space.slug }}/admin/categories">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-layers"></use></svg><span>分类</span>
+          </a>
+          <a class="admin-nav-item {% if nav == 'members' %}is-active{% endif %}" href="/s/{{ space.slug }}/admin/members">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-user"></use></svg><span>成员</span>
+          </a>
+          <a class="admin-nav-item {% if nav == 'settings' %}is-active{% endif %}" href="/s/{{ space.slug }}/admin/settings">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-sliders"></use></svg><span>空间设置</span>
+          </a>
+        {% endif %}
+      </nav>
+
+      <div class="admin-sidebar-foot">
+        {% if is_global %}
+          <a class="back-link" href="/">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-left"></use></svg>
+            <span>返回导航</span>
+          </a>
+        {% else %}
+          <a class="back-link" href="/s/{{ space.slug }}">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-left"></use></svg>
+            <span>返回导航</span>
+          </a>
+          {% if user.is_super_admin %}
+          <a class="back-link" href="/admin/spaces">
+            <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-shield"></use></svg>
+            <span>系统管理</span>
+          </a>
+          {% endif %}
+        {% endif %}
+
+        <div class="account-card">
+          <span class="avatar avatar-sm" aria-hidden="true">{{ user_initials }}</span>
+          <div class="account-meta">
+            <strong>{{ user.display_name }}</strong>
+            <span>{{ user.username }}</span>
+          </div>
+          <button type="button" class="icon-btn theme-toggle" data-theme-toggle aria-label="切换深色模式">
+            <svg class="icon icon-sun" aria-hidden="true"><use href="/assets/icons.svg#i-sun"></use></svg>
+            <svg class="icon icon-moon" aria-hidden="true"><use href="/assets/icons.svg#i-moon"></use></svg>
+          </button>
+          <form method="post" action="/logout" class="inline-form">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button type="submit" class="icon-btn" aria-label="退出登录" title="退出登录">
+              <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-logout"></use></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </aside>
+
+    <div class="sidebar-scrim" data-sidebar-close></div>
+
+    <div class="admin-frame">
+      <header class="admin-mobile-bar">
+        <button type="button" class="icon-btn" data-sidebar-open aria-label="打开菜单">
+          <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-menu"></use></svg>
+        </button>
+        <a class="brand" href="/">
+          <span class="brand-mark" aria-hidden="true"><span class="brand-orbit"></span><span class="brand-core"></span></span>
+          <span class="brand-word">{{ site_name }}</span>
+        </a>
+        <span class="mobile-context">{% if is_global %}系统管理{% else %}{{ space.name }}{% endif %}</span>
+        <button type="button" class="icon-btn theme-toggle" data-theme-toggle aria-label="切换深色模式">
+          <svg class="icon icon-sun" aria-hidden="true"><use href="/assets/icons.svg#i-sun"></use></svg>
+          <svg class="icon icon-moon" aria-hidden="true"><use href="/assets/icons.svg#i-moon"></use></svg>
+        </button>
+      </header>
+
+      <main class="admin-main">
+        <header class="page-head">
+          <div class="page-head-copy">
+            <p class="eyebrow">{{ page_kicker }}</p>
+            <h1>{{ page_title }}</h1>
+            {% if page_desc %}<p class="page-desc">{{ page_desc }}</p>{% endif %}
+          </div>
+          <div class="page-head-actions">
+            {% block header_actions %}{% endblock %}
+          </div>
+        </header>
+
+        {% if flash %}
+        <div class="flash flash-{{ flash.kind }}" role="status">
+          <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#{% if flash.kind == 'success' %}i-check{% else %}i-alert{% endif %}"></use></svg>
+          <span>{{ flash.message }}</span>
+        </div>
+        {% endif %}
+
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  {% block dialogs %}{% endblock %}
+  <script src="/assets/admin.js?v={{ asset_version }}"></script>
+</body>
+</html>

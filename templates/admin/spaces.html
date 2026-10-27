@@ -1,0 +1,137 @@
+{% extends "admin_base.html" %}
+
+{% block header_actions %}
+<a class="btn btn-primary" href="?dialog=new">
+  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg>
+  <span>新建空间</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="stat-grid">
+  <div class="stat-card">
+    <span class="stat-label">团队空间</span>
+    <strong>{{ stats.spaces }}</strong>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">账号</span>
+    <strong>{{ stats.users }}</strong>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">公共链接</span>
+    <strong>{{ stats.public_links }}</strong>
+  </div>
+  <div class="stat-card">
+    <span class="stat-label">个人收藏</span>
+    <strong>{{ stats.private_links }}</strong>
+  </div>
+</div>
+
+<section class="admin-panel">
+  <div class="panel-head panel-head-row">
+    <div>
+      <h2>全部空间</h2>
+      <p>每个空间有独立的公共导航、分类、成员与个人收藏。</p>
+    </div>
+    <span class="toolbar-count">{{ summaries|length }} 个空间</span>
+  </div>
+
+  {% if summaries %}
+  <div class="space-list">
+    {% for item in summaries %}
+    <article class="space-row">
+      <div class="space-mark" aria-hidden="true">{{ item.initial }}</div>
+      <div class="space-copy">
+        <div class="space-title-row">
+          <h3>{{ item.space.name }}</h3>
+          <code>{{ item.space.slug }}</code>
+        </div>
+        {% if item.space.description %}
+        <p class="space-desc">{{ item.space.description }}</p>
+        {% endif %}
+        <div class="space-meta">
+          <span>{{ item.member_count }} 位成员</span>
+          <span class="dot-sep" aria-hidden="true"></span>
+          <span>{{ item.public_links }} 个公共链接</span>
+          <span class="dot-sep" aria-hidden="true"></span>
+          <span class="admin-names">{% for admin in item.admins %}{{ admin }}{% if not loop.last %}、{% endif %}{% endfor %}{% if not item.admins %}暂无管理员{% endif %}</span>
+        </div>
+      </div>
+      <div class="space-actions">
+        <a class="btn btn-ghost btn-sm" href="/s/{{ item.space.slug }}" target="_blank" rel="noopener">打开</a>
+        <a class="btn btn-secondary btn-sm" href="/s/{{ item.space.slug }}/admin/links">管理</a>
+        <a class="icon-btn icon-btn-sm" href="?dialog=edit&edit={{ item.space.id }}" aria-label="编辑 {{ item.space.name }}" title="编辑">
+          <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-edit"></use></svg>
+        </a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="admin-empty">
+    <span class="admin-empty-mark" aria-hidden="true">
+      <svg class="icon"><use href="/assets/icons.svg#i-spaces"></use></svg>
+    </span>
+    <h2>还没有空间</h2>
+    <p>新建一个空间，把第一位空间管理员加进去。</p>
+    <a class="btn btn-primary" href="?dialog=new">新建空间</a>
+  </div>
+  {% endif %}
+</section>
+
+{% if dialog and dialog.open %}
+<dialog class="modal" id="space-dialog" data-open="true">
+  <div class="modal-head">
+    <div>
+      <p class="eyebrow">系统管理</p>
+      <h2>{% if dialog.mode == 'edit' %}编辑空间{% else %}新建空间{% endif %}</h2>
+    </div>
+    <button type="button" class="icon-btn" data-dialog-close aria-label="关闭">
+      <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-close"></use></svg>
+    </button>
+  </div>
+  <form method="post" action="{{ dialog.action }}" class="modal-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if dialog.error %}
+    <div class="form-alert" role="alert">{{ dialog.error }}</div>
+    {% endif %}
+    <label class="field">
+      <span class="field-label">空间名称</span>
+      <input class="input" type="text" name="name" value="{{ dialog.values.name }}" required maxlength="40" placeholder="例如 数据治理组">
+    </label>
+    {% if dialog.mode == 'new' %}
+    <label class="field">
+      <span class="field-label">空间标识</span>
+      <input class="input" type="text" name="slug" value="{{ dialog.values.slug }}" required maxlength="40" spellcheck="false" placeholder="例如 data-gov">
+      <span class="field-note">用于网址，小写字母、数字或短横线，创建后不可修改。</span>
+    </label>
+    {% else %}
+    <div class="field">
+      <span class="field-label">空间标识</span>
+      <code class="readonly-code">{{ dialog.values.slug }}</code>
+    </div>
+    {% endif %}
+    <label class="field">
+      <span class="field-label">简介</span>
+      <textarea class="input textarea" name="description" maxlength="200" rows="3" placeholder="一句话说明这个空间收什么">{{ dialog.values.description }}</textarea>
+    </label>
+    {% if dialog.mode == 'new' %}
+    <label class="field">
+      <span class="field-label">空间管理员账号</span>
+      <input class="input" type="text" name="admin_username" value="{{ dialog.values.admin_username }}" required maxlength="32" list="user-choices" spellcheck="false" placeholder="输入已有账号，例如 liu.junhao">
+      <datalist id="user-choices">
+        {% for choice in user_choices %}
+        <option value="{{ choice.username }}">{{ choice.display_name }}</option>
+        {% endfor %}
+      </datalist>
+      <span class="field-note">该账号会立即成为空间管理员。</span>
+    </label>
+    {% endif %}
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-dialog-close>取消</button>
+      <button type="submit" class="btn btn-primary">{% if dialog.mode == 'edit' %}保存修改{% else %}创建空间{% endif %}</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

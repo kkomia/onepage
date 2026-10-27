@@ -1,0 +1,59 @@
+{% extends "admin_base.html" %}
+
+{% block content %}
+<div class="settings-grid">
+  <section class="admin-panel">
+    <div class="panel-head">
+      <div>
+        <h2>站点名称</h2>
+        <p>显示在登录页、侧边栏与浏览器标题中。</p>
+      </div>
+    </div>
+    <form method="post" action="/admin/site" class="form-stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="field">
+        <span class="field-label">名称</span>
+        <input class="input" type="text" name="site_name" value="{{ site_name_value }}" required maxlength="30">
+      </label>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">保存站点名称</button>
+      </div>
+    </form>
+  </section>
+
+  <aside class="settings-side">
+    <section class="admin-panel info-panel">
+      <div class="panel-head">
+        <h2>运行信息</h2>
+      </div>
+      <dl class="info-list">
+        <div>
+          <dt>访问地址</dt>
+          <dd>{% if base_url %}<a class="text-link" href="{{ base_url }}" target="_blank" rel="noopener">{{ base_url }}</a>{% else %}随当前请求地址{% endif %}</dd>
+        </div>
+        <div>
+          <dt>监听端口</dt>
+          <dd><code>{{ listen_addr }}</code></dd>
+        </div>
+        <div>
+          <dt>登录有效期</dt>
+          <dd>{{ session_days }} 天</dd>
+        </div>
+        <div>
+          <dt>自动抓取图标</dt>
+          <dd>{% if icon_fetch %}已开启{% else %}已关闭{% endif %}</dd>
+        </div>
+        <div>
+          <dt>数据目录</dt>
+          <dd><code>{{ data_dir }}</code></dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="admin-panel quiet-panel">
+      <h2>部署参数在配置文件里</h2>
+      <p>监听地址、数据目录、HTTPS Cookie 与图标抓取开关由 <code>onepage.toml</code> 或环境变量控制，修改后重启服务。</p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

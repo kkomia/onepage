@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>{{ site_name }}</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/fonts.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/assets/app.css?v={{ asset_version }}">
+  <script src="/assets/theme.js?v={{ asset_version }}"></script>
+</head>
+<body class="nav-page" data-page="nav">
+  <div id="nav-root" data-bootstrap="{{ bootstrap_json }}">
+    <div class="boot-splash">
+      <div class="boot-mark" aria-hidden="true"><span class="brand-orbit"></span><span class="brand-core"></span></div>
+      <p>正在整理你的导航…</p>
+    </div>
+    <noscript>
+      <div class="noscript-card">
+        <h1>{{ site_name }}</h1>
+        <p>导航页需要启用 JavaScript。请在浏览器设置中允许脚本后刷新页面。</p>
+      </div>
+    </noscript>
+  </div>
+  <script src="/assets/nav.js?v={{ asset_version }}"></script>
+</body>
+</html>

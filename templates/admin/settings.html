@@ -1,0 +1,71 @@
+{% extends "admin_base.html" %}
+
+{% block header_actions %}
+<a class="btn btn-secondary" href="/s/{{ space.slug }}" target="_blank" rel="noopener">
+  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-arrow-up-right"></use></svg>
+  <span>打开导航</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<div class="settings-grid">
+  <section class="admin-panel">
+    <div class="panel-head">
+      <div>
+        <h2>空间信息</h2>
+        <p>名称与描述会出现在成员侧边栏和首页。</p>
+      </div>
+    </div>
+    <form method="post" action="/s/{{ space.slug }}/admin/settings" class="form-stack">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <label class="field">
+        <span class="field-label">空间名称</span>
+        <input class="input" type="text" name="name" value="{{ space.name }}" required maxlength="40">
+      </label>
+      <label class="field">
+        <span class="field-label">简介</span>
+        <textarea class="input textarea" name="description" maxlength="200" rows="4" placeholder="一句话说明这个空间收什么">{{ space.description }}</textarea>
+        <span class="field-note">最多 200 个字符，可以留空。</span>
+      </label>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">保存空间信息</button>
+      </div>
+    </form>
+  </section>
+
+  <aside class="settings-side">
+    <section class="admin-panel info-panel">
+      <div class="panel-head">
+        <h2>访问信息</h2>
+      </div>
+      <dl class="info-list">
+        <div>
+          <dt>空间标识</dt>
+          <dd><code>{{ space.slug }}</code></dd>
+        </div>
+        <div>
+          <dt>导航地址</dt>
+          <dd><a class="text-link" href="{{ public_url }}" target="_blank" rel="noopener">{{ public_url }}</a></dd>
+        </div>
+        <div>
+          <dt>创建时间</dt>
+          <dd>{{ created_label }}</dd>
+        </div>
+        <div>
+          <dt>成员</dt>
+          <dd>{{ member_count }} 人</dd>
+        </div>
+        <div>
+          <dt>公共链接</dt>
+          <dd>{{ public_links }} 个</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="admin-panel quiet-panel">
+      <h2>空间标识不可修改</h2>
+      <p>标识已经写在成员收藏的网址里。需要更换时，请让系统管理员新建空间并迁移内容。</p>
+    </section>
+  </aside>
+</div>
+{% endblock %}

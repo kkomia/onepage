@@ -1,0 +1,10 @@
+/target
+/data
+/data-dev
+/tmp-fonts
+onepage.toml
+*.db
+*.db-shm
+*.db-wal
+*.log
+.DS_Store

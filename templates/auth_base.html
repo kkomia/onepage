@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}{{ site_name }}{% endblock %}</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/fonts.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/assets/app.css?v={{ asset_version }}">
+  <script src="/assets/theme.js?v={{ asset_version }}"></script>
+</head>
+<body class="auth-page page-{{ page }}">
+  <div class="auth-shell">
+    <aside class="auth-aside">
+      <a class="brand brand-lg" href="/" aria-label="{{ site_name }}">
+        <span class="brand-mark" aria-hidden="true">
+          <span class="brand-orbit"></span>
+          <span class="brand-core"></span>
+        </span>
+        <span class="brand-word">{{ site_name }}</span>
+      </a>
+
+      <div class="auth-manifesto">
+        <p class="eyebrow">团队导航</p>
+        <h1>把散落的入口，<br><em>收进一页。</em></h1>
+        <p class="lede">平台、工具与仓库，团队共用一处。</p>
+      </div>
+
+      <svg class="constellation" viewBox="0 0 640 420" fill="none" aria-hidden="true">
+        <g class="constellation-lines" stroke="currentColor" stroke-width="1">
+          <path d="M86 306 L184 224 L292 258 L374 152 L502 196 L560 92"/>
+          <path d="M184 224 L212 112 L374 152"/>
+          <path d="M292 258 L324 352 L472 316 L502 196"/>
+          <path d="M212 112 L124 62 L86 306"/>
+          <path d="M472 316 L560 92"/>
+          <path d="M124 62 L86 306"/>
+        </g>
+        <g class="constellation-dots" fill="currentColor">
+          <circle class="c-dot" cx="86" cy="306" r="2.5"/>
+          <circle class="c-dot" cx="184" cy="224" r="3"/>
+          <circle class="c-dot" cx="292" cy="258" r="2.5"/>
+          <circle class="c-dot c-accent" cx="374" cy="152" r="5"/>
+          <circle class="c-dot" cx="502" cy="196" r="3"/>
+          <circle class="c-dot" cx="560" cy="92" r="2"/>
+          <circle class="c-dot" cx="212" cy="112" r="3.5"/>
+          <circle class="c-dot" cx="324" cy="352" r="2.5"/>
+          <circle class="c-dot" cx="472" cy="316" r="2"/>
+          <circle class="c-dot" cx="124" cy="62" r="2"/>
+        </g>
+      </svg>
+
+      <footer class="auth-aside-foot">
+        <span>{{ site_name }}</span>
+        <span class="dot-sep" aria-hidden="true"></span>
+        <span>内部网络</span>
+      </footer>
+    </aside>
+
+    <main class="auth-main">
+      <div class="auth-utility">
+        <button type="button" class="icon-btn theme-toggle" data-theme-toggle aria-label="切换深色模式">
+          <svg class="icon icon-sun" aria-hidden="true"><use href="/assets/icons.svg#i-sun"></use></svg>
+          <svg class="icon icon-moon" aria-hidden="true"><use href="/assets/icons.svg#i-moon"></use></svg>
+        </button>
+      </div>
+      <div class="auth-card">
+        {% block content %}{% endblock %}
+      </div>
+      <p class="auth-foot">仅限内部网络访问</p>
+    </main>
+  </div>
+</body>
+</html>

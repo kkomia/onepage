@@ -1,0 +1,21 @@
+{% extends "auth_base.html" %}
+{% block title %}还没有空间 · {{ site_name }}{% endblock %}
+{% block content %}
+<p class="eyebrow">{{ user.display_name }}</p>
+<h2>还没有加入空间</h2>
+<p class="auth-sub">让系统管理员把你加入对应的团队空间，就可以开始使用了。</p>
+
+<div class="empty-orbit" aria-hidden="true">
+  <span></span>
+</div>
+
+<div class="auth-links auth-links-spread">
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="btn btn-secondary" type="submit">退出登录</button>
+  </form>
+  {% if user.is_super_admin %}
+  <a class="text-link" href="/admin/spaces">去管理空间</a>
+  {% endif %}
+</div>
+{% endblock %}

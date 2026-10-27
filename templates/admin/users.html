@@ -1,0 +1,151 @@
+{% extends "admin_base.html" %}
+
+{% block header_actions %}
+<a class="btn btn-primary" href="?dialog=new">
+  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg>
+  <span>新建账号</span>
+</a>
+{% endblock %}
+
+{% block content %}
+<section class="admin-panel">
+  <div class="panel-toolbar">
+    <span class="toolbar-count">共 {{ users|length }} 个账号</span>
+    <span class="toolbar-note">停用账号会立即结束其全部登录。</span>
+  </div>
+
+  <div class="table-wrap">
+    <table class="admin-table user-table">
+      <thead>
+        <tr>
+          <th class="col-name">账号</th>
+          <th>状态</th>
+          <th>所在空间</th>
+          <th class="col-date">最近登录</th>
+          <th class="col-actions"><span class="sr-only">操作</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in users %}
+        <tr class="{% if not item.user.is_active %}is-muted{% endif %}">
+          <td>
+            <div class="entity-cell">
+              <span class="avatar avatar-md" aria-hidden="true">{{ item.initial }}</span>
+              <div class="entity-copy">
+                <span class="entity-title">
+                  {{ item.user.display_name }}
+                  {% if item.user.is_super_admin %}<span class="badge badge-clay">系统管理员</span>{% endif %}
+                </span>
+                <span class="entity-url">{{ item.user.username }}</span>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% if item.user.is_active %}
+            <span class="status status-ok">启用</span>
+            {% else %}
+            <span class="status">停用</span>
+            {% endif %}
+            {% if item.user.must_change_password %}
+            <span class="status status-warn">待改密</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="chip-row">
+              {% for space_name in item.spaces %}
+              <span class="meta-pill">{{ space_name }}</span>
+              {% endfor %}
+              {% if not item.spaces %}<span class="muted-text">未加入空间</span>{% endif %}
+            </div>
+          </td>
+          <td class="col-date">{% if item.last_login_label %}{{ item.last_login_label }}{% else %}尚未登录{% endif %}</td>
+          <td class="col-actions">
+            <div class="row-actions">
+              <a class="icon-btn icon-btn-sm" href="?dialog=reset&reset={{ item.user.id }}" aria-label="重置 {{ item.user.display_name }} 的密码" title="重置密码">
+                <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-key"></use></svg>
+              </a>
+              {% if item.user.id != current_user_id %}
+              <form method="post" action="/admin/users/{{ item.user.id }}/toggle" data-confirm="{% if item.user.is_active %}停用 {{ item.user.display_name }} 的账号？对方会立即退出登录。{% else %}重新启用 {{ item.user.display_name }} 的账号？{% endif %}">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                {% if item.user.is_active %}
+                <button class="icon-btn icon-btn-sm icon-btn-danger" type="submit" aria-label="停用 {{ item.user.display_name }}" title="停用账号">
+                  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-user-x"></use></svg>
+                </button>
+                {% else %}
+                <button class="icon-btn icon-btn-sm" type="submit" aria-label="启用 {{ item.user.display_name }}" title="启用账号">
+                  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-user-check"></use></svg>
+                </button>
+                {% endif %}
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if dialog and dialog.open %}
+<dialog class="modal" id="user-dialog" data-open="true">
+  <div class="modal-head">
+    <div>
+      <p class="eyebrow">系统管理</p>
+      <h2>{% if dialog.mode == 'reset' %}重置密码{% else %}新建账号{% endif %}</h2>
+    </div>
+    <button type="button" class="icon-btn" data-dialog-close aria-label="关闭">
+      <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-close"></use></svg>
+    </button>
+  </div>
+  <form method="post" action="{{ dialog.action }}" class="modal-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if dialog.error %}
+    <div class="form-alert" role="alert">{{ dialog.error }}</div>
+    {% endif %}
+
+    {% if dialog.mode == 'reset' %}
+    <p class="modal-lede">正在为 <strong>{{ dialog.target_name }}</strong> 设置新密码。保存后，对方需要重新登录并修改密码。</p>
+    <label class="field">
+      <span class="field-label">新密码</span>
+      <input class="input" type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="128" autofocus>
+    </label>
+    <label class="field">
+      <span class="field-label">确认新密码</span>
+      <input class="input" type="password" name="password_confirm" autocomplete="new-password" required minlength="8" maxlength="128">
+    </label>
+    {% else %}
+    <div class="field-pair">
+      <label class="field">
+        <span class="field-label">登录账号</span>
+        <input class="input" type="text" name="username" value="{{ dialog.values.username }}" autocomplete="off" required maxlength="32" spellcheck="false" placeholder="例如 liu.junhao">
+      </label>
+      <label class="field">
+        <span class="field-label">显示姓名</span>
+        <input class="input" type="text" name="display_name" value="{{ dialog.values.display_name }}" autocomplete="off" required maxlength="40" placeholder="例如 刘峻豪">
+      </label>
+    </div>
+    <div class="field-pair">
+      <label class="field">
+        <span class="field-label">初始密码</span>
+        <input class="input" type="password" name="password" autocomplete="new-password" required minlength="8" maxlength="128">
+      </label>
+      <label class="field">
+        <span class="field-label">确认密码</span>
+        <input class="input" type="password" name="password_confirm" autocomplete="new-password" required minlength="8" maxlength="128">
+      </label>
+    </div>
+    <label class="check-field">
+      <input type="checkbox" name="must_change" {% if dialog.values.must_change %}checked{% endif %}>
+      <span>首次登录后必须修改密码</span>
+    </label>
+    {% endif %}
+
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-dialog-close>取消</button>
+      <button type="submit" class="btn btn-primary">{% if dialog.mode == 'reset' %}重置密码{% else %}创建账号{% endif %}</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}

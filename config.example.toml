@@ -1,0 +1,24 @@
+# OnePage configuration
+# All paths are resolved relative to this file (except absolute paths).
+
+# Address to listen on. Put a reverse proxy in front if you need HTTPS.
+bind = "0.0.0.0:8686"
+
+# SQLite database and log files live here.
+data_dir = "data"
+
+# Optional public address of the site. When it starts with https://,
+# session cookies are marked Secure automatically.
+# base_url = "https://nav.example.internal"
+
+# Override the automatic Secure-cookie detection (true / false).
+# secure_cookies = true
+
+# How long a login stays valid.
+session_days = 30
+
+# info / debug / warn
+log = "info"
+
+# Fetch site icons (favicon) server-side. Intranet sites only.
+icon_fetch = true

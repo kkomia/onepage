@@ -1,0 +1,14 @@
+target
+data
+data-dev
+tmp-fonts
+onepage.toml
+.env
+.git
+.gitignore
+.qoder
+*.log
+*.db
+*.db-shm
+*.db-wal
+README.md

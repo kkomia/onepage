@@ -1,0 +1,109 @@
+{% extends "admin_base.html" %}
+
+{% block header_actions %}
+<span class="toolbar-count">{{ members|length }} 位成员</span>
+<button class="btn btn-primary" type="button" data-dialog-open="member-add-dialog">
+  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-plus"></use></svg>
+  <span>添加成员</span>
+</button>
+{% endblock %}
+
+{% block content %}
+<section class="admin-panel">
+  <div class="table-wrap">
+    <table class="admin-table member-table">
+      <thead>
+        <tr>
+          <th class="col-name">成员</th>
+          <th>角色</th>
+          <th class="col-date">加入时间</th>
+          <th class="col-date">最近登录</th>
+          <th class="col-actions"><span class="sr-only">操作</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for member in members %}
+        <tr>
+          <td>
+            <div class="entity-cell">
+              <span class="avatar avatar-md" aria-hidden="true">{{ member.initial }}</span>
+              <div class="entity-copy">
+                <span class="entity-title">{{ member.display_name }}</span>
+                <span class="entity-url">{{ member.username }}{% if not member.is_active %} · 已停用{% endif %}</span>
+              </div>
+            </div>
+          </td>
+          <td>
+            {% if member.is_self %}
+            <span class="meta-pill">{{ "管理员" if member.role == "admin" else "成员" }}</span>
+            {% else %}
+            <form method="post" action="/s/{{ space.slug }}/admin/members/{{ member.user_id }}/role" class="role-form">
+              <input type="hidden" name="csrf" value="{{ csrf }}">
+              <select class="input select select-compact" name="role" aria-label="修改 {{ member.display_name }} 的角色">
+                <option value="member" {% if member.role == 'member' %}selected{% endif %}>成员</option>
+                <option value="admin" {% if member.role == 'admin' %}selected{% endif %}>管理员</option>
+              </select>
+              <button class="btn btn-ghost btn-sm" type="submit">更新</button>
+            </form>
+            {% endif %}
+          </td>
+          <td class="col-date">{{ member.joined_label }}</td>
+          <td class="col-date">{% if member.last_login_label %}{{ member.last_login_label }}{% else %}尚未登录{% endif %}</td>
+          <td class="col-actions">
+            <div class="row-actions">
+              {% if not member.is_self %}
+              <form method="post" action="/s/{{ space.slug }}/admin/members/{{ member.user_id }}/remove" data-confirm="将 {{ member.display_name }} 移出空间？对方的个人导航会保留，再次加入后可继续使用。">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="icon-btn icon-btn-sm icon-btn-danger" type="submit" aria-label="移除 {{ member.display_name }}" title="移出空间">
+                  <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-user-minus"></use></svg>
+                </button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if members|length == 1 %}
+  <p class="panel-note">空间至少需要一位管理员；移除或降级最后一位管理员会被拒绝。</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block dialogs %}
+<dialog class="modal" id="member-add-dialog" {% if add_error %}data-open="true"{% endif %}>
+  <div class="modal-head">
+    <div>
+      <p class="eyebrow">空间成员</p>
+      <h2>添加成员</h2>
+    </div>
+    <button type="button" class="icon-btn" data-dialog-close aria-label="关闭">
+      <svg class="icon" aria-hidden="true"><use href="/assets/icons.svg#i-close"></use></svg>
+    </button>
+  </div>
+  <form method="post" action="/s/{{ space.slug }}/admin/members" class="modal-form">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if add_error %}
+    <div class="form-alert" role="alert">{{ add_error }}</div>
+    {% endif %}
+    <label class="field">
+      <span class="field-label">账号</span>
+      <input class="input" type="text" name="username" value="{{ add_username }}" required maxlength="32" placeholder="例如 liu.junhao" spellcheck="false" autofocus>
+      <span class="field-note">账号由系统管理员创建；这里只负责把账号加入当前空间。</span>
+    </label>
+    <label class="field">
+      <span class="field-label">角色</span>
+      <select class="input select" name="role">
+        <option value="member" {% if add_role != 'admin' %}selected{% endif %}>成员</option>
+        <option value="admin" {% if add_role == 'admin' %}selected{% endif %}>管理员</option>
+      </select>
+    </label>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-ghost" data-dialog-close>取消</button>
+      <button type="submit" class="btn btn-primary">加入空间</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
