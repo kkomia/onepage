@@ -257,7 +257,12 @@ fn guarded_get(
 ) -> Option<(Url, Vec<u8>)> {
     let mut current = start.clone();
     for _ in 0..=MAX_HOPS {
-        if budget.expired() || !url_allowed(&current, allow_private) {
+        if budget.expired() {
+            tracing::debug!(url = %current, "icon fetch stopped: time budget exhausted");
+            return None;
+        }
+        if !url_allowed(&current, allow_private) {
+            tracing::debug!(url = %current, "icon fetch refused by address policy");
             return None;
         }
         let mut response = agent
